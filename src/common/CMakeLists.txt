@@ -36,6 +36,7 @@ add_library(common STATIC
     level.c
     map.c
     maths.c
+    net.c
     script.c
     storage.c
     string.c

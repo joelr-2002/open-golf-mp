@@ -4,6 +4,7 @@
 #include "common/data.h"
 #include "common/debug_console.h"
 #include "common/graphics.h"
+#include "common/net.h"
 #include "common/log.h"
 #include "golf/game.h"
 #include "golf/ui.h"
@@ -25,6 +26,7 @@ void golf_init(void) {
     ui = golf_ui_get();
     game = golf_game_get();
 
+    golf_net_init();
     golf_game_init();
     golf_ui_init();
 
@@ -32,6 +34,77 @@ void golf_init(void) {
 }
 
 void golf_update(float dt) {
+    golf_net_event_t event;
+    while (golf_net_update(&event)) {
+        if (event.type == GOLF_NET_EVENT_CONNECT) {
+            golf_log_note("Client connected: %d", event.client_id);
+            if (golf_net_is_server()) {
+                // If it's the host, send level start if in game
+                if (golf.state == GOLF_STATE_IN_GAME) {
+                    golf_packet_t packet;
+                    packet.type = GOLF_PACKET_LEVEL_START;
+                    // Not sending full level right now, just generic start 
+                    golf_net_server_send_packet_to(event.client_id, &packet, sizeof(packet), true);
+                }
+            }
+        }
+        else if (event.type == GOLF_NET_EVENT_DISCONNECT) {
+            golf_log_note("Client disconnected: %d", event.client_id);
+            if (event.client_id >= 0 && event.client_id < MAX_PLAYERS) {
+                game->players[event.client_id].active = false;
+            }
+        }
+        else if (event.type == GOLF_NET_EVENT_RECEIVE) {
+            uint8_t packet_type = ((uint8_t*)event.data)[0];
+            if (packet_type == GOLF_PACKET_SYNC_POS) {
+                golf_packet_sync_pos_t *sync = (golf_packet_sync_pos_t*)event.data;
+                if (sync->client_id >= 0 && sync->client_id < MAX_PLAYERS) {
+                    game->players[sync->client_id].active = sync->active;
+                    // We only overwrite position if we are not the one simulating it, or if it's authoritative
+                    if (golf_net_is_client() && sync->client_id != game->local_player_id) {
+                        game->players[sync->client_id].ball.pos = sync->pos;
+                        game->players[sync->client_id].ball.vel = sync->vel;
+                        game->players[sync->client_id].stroke_count = sync->strokes;
+                    }
+                }
+            }
+            else if (packet_type == GOLF_PACKET_HIT_BALL) {
+                golf_packet_hit_ball_t *hit = (golf_packet_hit_ball_t*)event.data;
+                if (hit->client_id >= 0 && hit->client_id < MAX_PLAYERS) {
+                    game->players[hit->client_id].ball.vel = hit->velocity;
+                    game->players[hit->client_id].ball.is_moving = true;
+                    game->players[hit->client_id].stroke_count++;
+                }
+            }
+            else if (packet_type == GOLF_PACKET_LEVEL_START) {
+                if (golf_net_is_client() && golf.state != GOLF_STATE_IN_GAME) {
+                    golf_start_level(golf.level_num); 
+                }
+            }
+        }
+        golf_net_free_event(&event);
+    }
+
+    if (golf_net_is_server()) {
+        static float network_timer = 0;
+        network_timer += dt;
+        if (network_timer >= 1.0f / 20.0f) {
+            network_timer = 0;
+            for (int i = 0; i < MAX_PLAYERS; i++) {
+                if (game->players[i].active) {
+                    golf_packet_sync_pos_t sync;
+                    sync.type = GOLF_PACKET_SYNC_POS;
+                    sync.client_id = i;
+                    sync.pos = game->players[i].ball.pos;
+                    sync.vel = game->players[i].ball.vel;
+                    sync.active = game->players[i].active;
+                    sync.strokes = game->players[i].stroke_count;
+                    golf_net_send_packet(&sync, sizeof(sync), false);
+                }
+            }
+        }
+    }
+
     switch (golf.state) {
         case GOLF_STATE_TITLE_SCREEN: {
             golf.title_screen.t += dt;

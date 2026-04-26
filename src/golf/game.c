@@ -12,6 +12,7 @@
 #include "common/debug_console.h"
 #include "common/graphics.h"
 #include "common/inputs.h"
+#include "common/net.h"
 #include "common/log.h"
 #include "common/storage.h"
 #include "golf/golf.h"
@@ -77,7 +78,7 @@ static float _golf_game_get_camera_zone_angle(vec3 pos) {
     if (golf_level_get_camera_zone(golf->level, pos, &camera_zone)) {
         vec3 camera_zone_dir;
         if (camera_zone.towards_hole) {
-            camera_zone_dir = vec3_sub(game.hole_pos, game.ball.draw_pos);
+            camera_zone_dir = vec3_sub(game.hole_pos, game.players[game.local_player_id].ball.draw_pos);
             camera_zone_dir.y = 0;
             camera_zone_dir = vec3_normalize(camera_zone_dir);
         }
@@ -110,20 +111,20 @@ void golf_game_init(void) {
     game.cam.angle = 0;
     game.cam.angle_velocity = 0;
 
-    game.ball.pos = V3(0, 0, 0);
-    game.ball.draw_pos = V3(0, 0, 0);
-    game.ball.vel = V3(0, 0, 0);
-    game.ball.rot_vec = V3(0, 0, 0);
-    game.ball.orientation = QUAT(0, 0, 0, 1);
-    game.ball.radius = 0.12f;
-    game.ball.time_going_slow = 0;
-    game.ball.time_since_water_ripple = 0;
-    game.ball.rot_vel = 0;
-    game.ball.is_moving = false;
-    game.ball.is_out_of_bounds = false;
-    game.ball.is_in_hole = false;
-    game.ball.time_since_impact_sound = 0;
-    game.ball.time_out_of_water = 1;
+    game.players[game.local_player_id].ball.pos = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.draw_pos = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.vel = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.rot_vec = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.orientation = QUAT(0, 0, 0, 1);
+    game.players[game.local_player_id].ball.radius = 0.12f;
+    game.players[game.local_player_id].ball.time_going_slow = 0;
+    game.players[game.local_player_id].ball.time_since_water_ripple = 0;
+    game.players[game.local_player_id].ball.rot_vel = 0;
+    game.players[game.local_player_id].ball.is_moving = false;
+    game.players[game.local_player_id].ball.is_out_of_bounds = false;
+    game.players[game.local_player_id].ball.is_in_hole = false;
+    game.players[game.local_player_id].ball.time_since_impact_sound = 0;
+    game.players[game.local_player_id].ball.time_out_of_water = 1;
 
     game.physics.time_behind = 0;
     game.physics.debug_draw_collisions = false;
@@ -172,7 +173,7 @@ static void _golf_game_update_state_main_menu(float dt) {
 static void _golf_game_update_state_waiting_for_aim(float dt) {
     GOLF_UNUSED(dt);
 
-    if (game.ball.is_moving) {
+    if (game.players[game.local_player_id].ball.is_moving) {
         game.state = GOLF_GAME_STATE_WATCHING_BALL;
     }
 }
@@ -185,7 +186,7 @@ static void _golf_game_update_state_aiming(float dt) {
     {
         game.aim_line.offset.x += -3 * dt;
         game.aim_line.num_points = 0;
-        vec3 cur_point = game.ball.pos;
+        vec3 cur_point = game.players[game.local_player_id].ball.pos;
         vec3 cur_dir = aim_direction;
         float min_length = CFG_NUM(game_cfg, "aim_line_min_length");
         float max_length = CFG_NUM(game_cfg, "aim_line_max_length");
@@ -238,7 +239,7 @@ static void _golf_game_update_state_aiming(float dt) {
         }
     }
 
-    if (game.ball.is_moving) {
+    if (game.players[game.local_player_id].ball.is_moving) {
         game.state = GOLF_GAME_STATE_WATCHING_BALL;
     }
 }
@@ -246,16 +247,16 @@ static void _golf_game_update_state_aiming(float dt) {
 static void _golf_game_update_state_watching_ball(float dt) {
     GOLF_UNUSED(dt);
 
-    if (game.ball.is_in_hole) {
-        game.ball.vel = V3(0, 0, 0);
-        game.ball.is_moving = false;
+    if (game.players[game.local_player_id].ball.is_in_hole) {
+        game.players[game.local_player_id].ball.vel = V3(0, 0, 0);
+        game.players[game.local_player_id].ball.is_moving = false;
 
         game.state = GOLF_GAME_STATE_CELEBRATION;
         game.celebration.t = 0;
         game.celebration.cam_pos0 = graphics->cam_pos;
         game.celebration.cam_dir0 = graphics->cam_dir;
         game.celebration.cam_pos1 = vec3_add(graphics->cam_pos, vec3_scale(graphics->cam_dir, -1.5f));
-        game.celebration.cam_dir1 = vec3_normalize(vec3_sub(game.ball.draw_pos, game.celebration.cam_pos1));
+        game.celebration.cam_dir1 = vec3_normalize(vec3_sub(game.players[game.local_player_id].ball.draw_pos, game.celebration.cam_pos1));
 
         {
             char storage_key[256];
@@ -263,28 +264,28 @@ static void _golf_game_update_state_watching_ball(float dt) {
 
             float storage_stroke_count;
             bool is_key_set = golf_storage_get_num(storage_key, &storage_stroke_count); 
-            if (!is_key_set || game.stroke_count < (int)storage_stroke_count) {
-                golf_storage_set_num(storage_key, (float)game.stroke_count);
+            if (!is_key_set || game.players[game.local_player_id].stroke_count < (int)storage_stroke_count) {
+                golf_storage_set_num(storage_key, (float)game.players[game.local_player_id].stroke_count);
             }
             golf_storage_save();
         }
 
         golf_audio_start_sound("ball_in_hole", "data/audio/confirmation_002.ogg", 1, false, true);
     }
-    else if (game.ball.is_out_of_bounds) {
-        game.ball.pos = game.ball.start_pos;
-        game.ball.draw_pos = game.ball.pos;
-        game.ball.is_moving = false;
-        game.ball.vel = V3(0, 0, 0);
-        game.ball.rot_vel = 0;
-        game.ball.orientation = QUAT(0, 0, 0, 1);
-        game.ball.is_out_of_bounds = 0;
+    else if (game.players[game.local_player_id].ball.is_out_of_bounds) {
+        game.players[game.local_player_id].ball.pos = game.players[game.local_player_id].ball.start_pos;
+        game.players[game.local_player_id].ball.draw_pos = game.players[game.local_player_id].ball.pos;
+        game.players[game.local_player_id].ball.is_moving = false;
+        game.players[game.local_player_id].ball.vel = V3(0, 0, 0);
+        game.players[game.local_player_id].ball.rot_vel = 0;
+        game.players[game.local_player_id].ball.orientation = QUAT(0, 0, 0, 1);
+        game.players[game.local_player_id].ball.is_out_of_bounds = 0;
         game.cam.angle = game.cam.start_angle;
         game.cam.auto_rotate = false;
         game.state = GOLF_GAME_STATE_WAITING_FOR_AIM;
         golf_audio_start_sound("ball_out_of_bounds", "data/audio/error_008.ogg", 1, false, true);
     }
-    else if (!game.ball.is_moving) {
+    else if (!game.players[game.local_player_id].ball.is_moving) {
         game.state = GOLF_GAME_STATE_WAITING_FOR_AIM;
     }
 }
@@ -316,12 +317,12 @@ int _ball_contact_cmp(const void *a, const void *b) {
     }
 }
 
-static void _physics_tick(float dt) {
+static void _physics_tick(int p_idx, float dt) {
     float EPS = 0.001f;
 
-    vec3 bp = game.ball.pos;
-    float br = game.ball.radius;
-    vec3 bv = game.ball.vel;
+    vec3 bp = game.players[p_idx].ball.pos;
+    float br = game.players[p_idx].ball.radius;
+    vec3 bv = game.players[p_idx].ball.vel;
     float bs = vec3_length(bv);
     vec3 bp0 = bp;
     vec3 bv0 = bv;
@@ -553,8 +554,8 @@ static void _physics_tick(float dt) {
         bv = vec3_add(bv, contact->impulse);
         bv = vec3_scale(bv, v_scale);
 
-        game.ball.rot_vel = vec3_length(bv) / (MF_PI * game.ball.radius);
-        game.ball.rot_vec = vec3_normalize(vec3_cross(n, bv));
+        game.players[p_idx].ball.rot_vel = vec3_length(bv) / (MF_PI * game.players[p_idx].ball.radius);
+        game.players[p_idx].ball.rot_vec = vec3_normalize(vec3_cross(n, bv));
 
         vec3 t = vec3_sub(bv, vec3_scale(n, vec3_dot(bv, n)));
         if (vec3_length(t) > EPS) {
@@ -577,13 +578,13 @@ static void _physics_tick(float dt) {
         contact->v1 = bv;
 
         if (contact->impulse_mag > 1 && contact->cull_dot < -0.15f) {
-            if (game.ball.time_since_impact_sound > 0.1f) {
+            if (game.players[p_idx].ball.time_since_impact_sound > 0.1f) {
                 golf_audio_start_sound("ball_impact", "data/audio/footstep_grass_004.ogg", 1, false, true);
-                game.ball.time_since_impact_sound = 0;
+                game.players[p_idx].ball.time_since_impact_sound = 0;
             }
         }
     }
-    game.ball.time_since_impact_sound += dt;
+    game.players[p_idx].ball.time_since_impact_sound += dt;
 
     float gravity = -9.8f;
     bv = vec3_add(bv, V3(0, gravity * dt, 0));
@@ -603,7 +604,7 @@ static void _physics_tick(float dt) {
         bp = vec3_add(bp, correction);
     }
 
-    game.ball.is_in_water = false;
+    game.players[p_idx].ball.is_in_water = false;
     for (int i = 0; i < num_contacts; i++) {
         golf_ball_contact_t *contact = &contacts[i];
         if (contact->is_ignored) {
@@ -616,10 +617,10 @@ static void _physics_tick(float dt) {
         vec3 water_dir = contact->water_dir;
         vec3 water_vel = vec3_scale(water_dir, CFG_NUM(game_cfg, "physics_water_max_speed"));
         bv = vec3_add(bv, vec3_scale(vec3_sub(water_vel, bv), CFG_NUM(game_cfg, "physics_water_speed") * dt));
-        game.ball.is_in_water = true;
+        game.players[p_idx].ball.is_in_water = true;
     }
 
-    if (game.ball.is_moving && num_contacts > 0) {
+    if (game.players[p_idx].ball.is_moving && num_contacts > 0) {
         golf_collision_data_t collision;
         collision.num_contacts = num_contacts;
         for (int i = 0; i < num_contacts; i++) {
@@ -631,24 +632,24 @@ static void _physics_tick(float dt) {
     }
 
     if (vec3_length(bv) < 0.1f) {
-        game.ball.time_going_slow += dt;
+        game.players[p_idx].ball.time_going_slow += dt;
     }
     else {
-        game.ball.time_going_slow = 0.0f;
+        game.players[p_idx].ball.time_going_slow = 0.0f;
     }
 
-    if (!game.ball.is_moving && vec3_length(bv) > 0.1f) {
-        game.ball.is_moving = true;
+    if (!game.players[p_idx].ball.is_moving && vec3_length(bv) > 0.1f) {
+        game.players[p_idx].ball.is_moving = true;
     }
-    if (game.ball.is_moving) {
-        game.ball.pos = bp;
-        game.ball.vel = bv;
-        game.ball.rot_vel = game.ball.rot_vel - dt * game.ball.rot_vel * CFG_NUM(game_cfg, "physics_ball_rot_scale");
-        game.ball.orientation = quat_multiply(
-                quat_create_from_axis_angle(game.ball.rot_vec, game.ball.rot_vel * dt),
-                game.ball.orientation);
-        if (game.ball.time_going_slow > 0.5f) {
-            game.ball.is_moving = false;
+    if (game.players[p_idx].ball.is_moving) {
+        game.players[p_idx].ball.pos = bp;
+        game.players[p_idx].ball.vel = bv;
+        game.players[p_idx].ball.rot_vel = game.players[p_idx].ball.rot_vel - dt * game.players[p_idx].ball.rot_vel * CFG_NUM(game_cfg, "physics_ball_rot_scale");
+        game.players[p_idx].ball.orientation = quat_multiply(
+                quat_create_from_axis_angle(game.players[p_idx].ball.rot_vec, game.players[p_idx].ball.rot_vel * dt),
+                game.players[p_idx].ball.orientation);
+        if (game.players[p_idx].ball.time_going_slow > 0.5f) {
+            game.players[p_idx].ball.is_moving = false;
         }
     }
 
@@ -656,27 +657,27 @@ static void _physics_tick(float dt) {
         // Check to see if the ball ended up in the hole
         vec3 p = vec3_add(hole_pos, CFG_VEC3(game_cfg, "physics_in_hole_delta"));
         if (vec3_distance(p, bp) < CFG_NUM(game_cfg, "physics_in_hole_radius")) {
-            game.ball.is_in_hole = true;
+            game.players[p_idx].ball.is_in_hole = true;
         }
 
         // Check to see if the ball ended up out of bounds
         for (int i = 0; i < num_contacts; i++) {
             golf_ball_contact_t *contact = &contacts[i];
             if (contact->is_out_of_bounds) {
-                game.ball.time_out_of_bounds = game.t;
-                game.ball.is_out_of_bounds = true;
+                game.players[p_idx].ball.time_out_of_bounds = game.t;
+                game.players[p_idx].ball.is_out_of_bounds = true;
             }
         }
     }
 
-    if (game.ball.is_in_water) {
-        game.ball.time_out_of_water = 0;
-        game.ball.time_since_water_ripple += dt;
-        if (game.ball.time_since_water_ripple > CFG_NUM(game_cfg, "water_ripple_frequency")) {
-            game.ball.time_since_water_ripple = 0;
+    if (game.players[p_idx].ball.is_in_water) {
+        game.players[p_idx].ball.time_out_of_water = 0;
+        game.players[p_idx].ball.time_since_water_ripple += dt;
+        if (game.players[p_idx].ball.time_since_water_ripple > CFG_NUM(game_cfg, "water_ripple_frequency")) {
+            game.players[p_idx].ball.time_since_water_ripple = 0;
             
-            vec3 pos = game.ball.draw_pos;
-            pos.y -= game.ball.radius;
+            vec3 pos = game.players[p_idx].ball.draw_pos;
+            pos.y -= game.players[p_idx].ball.radius;
             pos.y += 0.02f;
 
             for (int i = 0; i < MAX_NUM_WATER_RIPPLES; i++) {
@@ -691,15 +692,15 @@ static void _physics_tick(float dt) {
         }
     }
     else {
-        game.ball.time_out_of_water += dt;
+        game.players[p_idx].ball.time_out_of_water += dt;
     }
 
-    if (game.ball.pos.y < CFG_NUM(game_cfg, "physics_kill_y")) {
-        game.ball.time_out_of_bounds = game.t;
-        game.ball.is_out_of_bounds = true;
+    if (game.players[p_idx].ball.pos.y < CFG_NUM(game_cfg, "physics_kill_y")) {
+        game.players[p_idx].ball.time_out_of_bounds = game.t;
+        game.players[p_idx].ball.is_out_of_bounds = true;
     }
 
-    if (game.ball.time_out_of_water < 0.1f) {
+    if (game.players[p_idx].ball.time_out_of_water < 0.1f) {
         golf_audio_start_sound("ball_in_water", "data/audio/in_water.ogg", 0.1f, true, false);
     }
     else {
@@ -753,11 +754,23 @@ void golf_game_update(float dt) {
         float physics_dt = 1.0f/120.0f;
         game.physics.time_behind += dt;
 
-        vec3 bp_prev = game.ball.pos;
+        // Ticking physics for all active players
+        vec3 bp_prev[MAX_PLAYERS];
+        for (int p_idx = 0; p_idx < MAX_PLAYERS; p_idx++) {
+            if (game.players[p_idx].active) {
+                bp_prev[p_idx] = game.players[p_idx].ball.pos;
+            }
+        }
+        
         int num_ticks = 0;
+        float time_behind_save = game.physics.time_behind;
         while (game.physics.time_behind >= 0 && num_ticks < 5) {
-            bp_prev = game.ball.pos;
-            _physics_tick(physics_dt);
+            for (int p_idx = 0; p_idx < MAX_PLAYERS; p_idx++) {
+                if (game.players[p_idx].active) {
+                    bp_prev[p_idx] = game.players[p_idx].ball.pos;
+                    _physics_tick(p_idx, physics_dt);
+                }
+            }
             game.physics.time_behind -= physics_dt;
             num_ticks++;
         }
@@ -766,7 +779,14 @@ void golf_game_update(float dt) {
         }
 
         float alpha = (float)(-game.physics.time_behind / physics_dt);
-        game.ball.draw_pos = vec3_add(vec3_scale(game.ball.pos, 1.0f - alpha), vec3_scale(bp_prev, alpha));
+        for (int p_idx = 0; p_idx < MAX_PLAYERS; p_idx++) {
+            if (game.players[p_idx].active) {
+                game.players[p_idx].ball.draw_pos = vec3_add(
+                    vec3_scale(game.players[p_idx].ball.pos, 1.0f - alpha), 
+                    vec3_scale(bp_prev[p_idx], alpha)
+                );
+            }
+        }
     }
 
     // Move around the camera
@@ -821,17 +841,17 @@ void golf_game_update(float dt) {
         case GOLF_GAME_STATE_AIMING:
         case GOLF_GAME_STATE_WATCHING_BALL: {
             if (game.cam.auto_rotate) {
-                float camera_zone_angle = _golf_game_get_camera_zone_angle(game.ball.draw_pos);
+                float camera_zone_angle = _golf_game_get_camera_zone_angle(game.players[game.local_player_id].ball.draw_pos);
                 float delta_angle = camera_zone_angle - game.cam.angle;
                 delta_angle = atan2f(sinf(delta_angle), cosf(delta_angle));
                 game.cam.angle += delta_angle * CFG_NUM(game_cfg, "cam_auto_rotate_speed");
             }
 
             vec3 cam_delta = vec3_rotate_y(V3(2.6f, 1.5f, 0), game.cam.angle);
-            vec3 wanted_pos = vec3_add(game.ball.draw_pos, cam_delta);
+            vec3 wanted_pos = vec3_add(game.players[game.local_player_id].ball.draw_pos, cam_delta);
             vec3 diff = vec3_sub(wanted_pos, graphics->cam_pos);
             graphics->cam_pos = vec3_add(graphics->cam_pos, vec3_scale(diff, 0.5f));
-            graphics->cam_dir = vec3_normalize(vec3_sub(vec3_add(game.ball.draw_pos, V3(0, 0.3f, 0)), graphics->cam_pos));
+            graphics->cam_dir = vec3_normalize(vec3_sub(vec3_add(game.players[game.local_player_id].ball.draw_pos, V3(0, 0.3f, 0)), graphics->cam_pos));
             break;
         }
         case GOLF_GAME_STATE_MAIN_MENU:
@@ -867,9 +887,9 @@ void golf_game_start_main_menu(void) {
         }
     }
 
-    game.ball.pos = V3(99999.0f, 99999.0f, 99999.0f);
-    game.ball.draw_pos = game.ball.pos;
-    game.ball.vel = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.pos = V3(99999.0f, 99999.0f, 99999.0f);
+    game.players[game.local_player_id].ball.draw_pos = game.players[game.local_player_id].ball.pos;
+    game.players[game.local_player_id].ball.vel = V3(0, 0, 0);
 
     graphics->cam_pos = begin_animation_pos;
     graphics->cam_dir = vec3_normalize(vec3_sub(hole_pos, begin_animation_pos));
@@ -897,7 +917,7 @@ void golf_game_start_level(void) {
                 break;
             case BALL_START_ENTITY:
                 ball_start_pos = entity->ball_start.transform.position;
-                ball_start_pos.y += game.ball.radius;
+                ball_start_pos.y += game.players[game.local_player_id].ball.radius;
                 break;
             case BEGIN_ANIMATION_ENTITY:
                 begin_animation_pos = entity->begin_animation.transform.position;
@@ -938,23 +958,23 @@ void golf_game_start_level(void) {
 
     game.t = 0;
 
-    game.stroke_count = 0;
+    game.players[game.local_player_id].stroke_count = 0;
     game.ball_start_pos = ball_start_pos;
     game.hole_pos = hole_pos;
 
-    game.ball.pos = ball_start_pos;
-    game.ball.draw_pos = ball_start_pos;
-    game.ball.vel = V3(0, 0, 0);
-    game.ball.rot_vec = V3(0, 0, 0);
-    game.ball.orientation = QUAT(0, 0, 0, 1);
-    game.ball.radius = 0.12f;
-    game.ball.time_going_slow = 0;
-    game.ball.time_since_water_ripple = 0;
-    game.ball.rot_vel = 0;
-    game.ball.is_moving = false;
-    game.ball.is_out_of_bounds = false;
-    game.ball.is_in_hole = false;
-    game.ball.time_out_of_bounds = -1;
+    game.players[game.local_player_id].ball.pos = ball_start_pos;
+    game.players[game.local_player_id].ball.draw_pos = ball_start_pos;
+    game.players[game.local_player_id].ball.vel = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.rot_vec = V3(0, 0, 0);
+    game.players[game.local_player_id].ball.orientation = QUAT(0, 0, 0, 1);
+    game.players[game.local_player_id].ball.radius = 0.12f;
+    game.players[game.local_player_id].ball.time_going_slow = 0;
+    game.players[game.local_player_id].ball.time_since_water_ripple = 0;
+    game.players[game.local_player_id].ball.rot_vel = 0;
+    game.players[game.local_player_id].ball.is_moving = false;
+    game.players[game.local_player_id].ball.is_out_of_bounds = false;
+    game.players[game.local_player_id].ball.is_in_hole = false;
+    game.players[game.local_player_id].ball.time_out_of_bounds = -1;
 
     game.cam.auto_rotate = true;
     game.cam.angle = _golf_game_get_camera_zone_angle(ball_start_pos);
@@ -972,8 +992,8 @@ void golf_game_start_level(void) {
     game.begin_camera_animation.cam_dir0 = vec3_normalize(vec3_sub(hole_pos, game.begin_camera_animation.cam_pos0));
 
     vec3 cam_delta = vec3_rotate_y(V3(2.6f, 1.5f, 0), game.cam.angle);
-    game.begin_camera_animation.cam_pos1 = vec3_add(game.ball.draw_pos, cam_delta);
-    game.begin_camera_animation.cam_dir1 = vec3_normalize(vec3_sub(vec3_add(game.ball.draw_pos, V3(0, 0.3f, 0)), game.begin_camera_animation.cam_pos1));
+    game.begin_camera_animation.cam_pos1 = vec3_add(game.players[game.local_player_id].ball.draw_pos, cam_delta);
+    game.begin_camera_animation.cam_dir1 = vec3_normalize(vec3_sub(vec3_add(game.players[game.local_player_id].ball.draw_pos, V3(0, 0.3f, 0)), game.begin_camera_animation.cam_pos1));
 
     graphics->cam_pos = game.begin_camera_animation.cam_pos0;
     graphics->cam_dir = game.begin_camera_animation.cam_dir0;
@@ -990,7 +1010,7 @@ void golf_game_stop_aiming(void) {
 
 void golf_game_hit_ball(vec2 aim_delta) {
     game.state = GOLF_GAME_STATE_WATCHING_BALL;
-    game.stroke_count++;
+    game.players[game.local_player_id].stroke_count++;
 
     vec3 aim_direction = V3(aim_delta.x, 0, aim_delta.y);
     aim_direction = vec3_normalize(vec3_rotate_y(aim_direction, game.cam.angle - 0.5f * MF_PI));
@@ -1022,12 +1042,18 @@ void golf_game_hit_ball(vec2 aim_delta) {
 
     game.cam.auto_rotate = true;
 
-    game.ball.vel = vec3_scale(aim_direction, start_speed);
-    game.ball.is_moving = true;
-    game.ball.start_pos = game.ball.pos;
+    game.players[game.local_player_id].ball.vel = vec3_scale(aim_direction, start_speed);
+    game.players[game.local_player_id].ball.is_moving = true;
+    game.players[game.local_player_id].ball.start_pos = game.players[game.local_player_id].ball.pos;
     game.cam.start_angle = game.cam.angle;
 
     game.physics.collision_history.length = 0;
+
+    golf_packet_hit_ball_t packet;
+    packet.type = GOLF_PACKET_HIT_BALL;
+    packet.client_id = game.local_player_id;
+    packet.velocity = game.players[game.local_player_id].ball.vel;
+    golf_net_send_packet(&packet, sizeof(packet), true);
 
     golf_audio_start_sound("hit_ball", "data/audio/impactPlank_medium_000.ogg", 1, false, true);
 }
