@@ -1,0 +1,46 @@
+name: Windows Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake -B out\win64 -S .
+
+      - name: Build
+        run: cmake --build out\win64 --config Release
+
+      - name: Package
+        run: |
+          mkdir OpenGolf
+          if (Test-Path "out\win64\Release\golf.exe") {
+            Copy-Item -Path "out\win64\Release\golf.exe" -Destination "OpenGolf\"
+          } elseif (Test-Path "out\win64\golf.exe") {
+            Copy-Item -Path "out\win64\golf.exe" -Destination "OpenGolf\"
+          } else {
+            Write-Error "golf.exe not found!"
+            exit 1
+          }
+          Copy-Item -Path "data" -Destination "OpenGolf\data" -Recurse
+          Compress-Archive -Path "OpenGolf" -DestinationPath "OpenGolf-Windows.zip"
+        shell: powershell
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: OpenGolf-Windows.zip
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
