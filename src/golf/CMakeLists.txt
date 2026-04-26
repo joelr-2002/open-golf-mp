@@ -10,6 +10,12 @@ set(GOLF_LIBRARIES
     stb
     xatlas)
 
+if(NOT CMAKE_SYSTEM_NAME STREQUAL Emscripten)
+    set(GOLF_LIBRARIES
+        ${GOLF_LIBRARIES}
+        enet)
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL Android)
     set(GOLF_LIBRARIES
         ${GOLF_LIBRARIES}

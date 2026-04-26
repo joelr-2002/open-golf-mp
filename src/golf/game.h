@@ -7,6 +7,7 @@
 #define MAX_NUM_CONTACTS 8
 #define MAX_AIM_LINE_POINTS 5
 #define MAX_NUM_WATER_RIPPLES 64
+#define MAX_PLAYERS 16
 
 typedef struct golf_collision_data {
     bool is_highlighted;
@@ -27,13 +28,10 @@ typedef enum golf_game_state {
     GOLF_GAME_STATE_PAUSED,
 } golf_game_state_t;
 
-typedef struct golf_game {
-    golf_game_state_t state, state_before_pause;
-
-    bool debug_inputs;
-
+typedef struct golf_player {
+    int client_id;
     int stroke_count;
-    vec3 ball_start_pos, hole_pos;
+    bool active;
 
     struct {
         vec3 start_pos, pos, vel, draw_pos, rot_vec;
@@ -42,6 +40,17 @@ typedef struct golf_game {
               time_out_of_water, time_since_impact_sound;
         bool is_moving, is_in_hole, is_in_water, is_out_of_bounds;
     } ball;
+} golf_player_t;
+
+typedef struct golf_game {
+    golf_game_state_t state, state_before_pause;
+
+    bool debug_inputs;
+
+    int local_player_id;
+    golf_player_t players[MAX_PLAYERS];
+
+    vec3 ball_start_pos, hole_pos;
 
     struct {
         bool auto_rotate;

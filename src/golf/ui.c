@@ -11,6 +11,7 @@
 #include "common/json.h"
 #include "common/log.h"
 #include "common/storage.h"
+#include "common/net.h"
 #include "golf/game.h"
 #include "golf/golf.h"
 
@@ -518,13 +519,13 @@ static void _golf_ui_aim_circle_name(golf_ui_layout_t *layout, const char *name,
     entity->aim_circle.t += dt;
 
     float ui_scale = _get_ui_scale();
-    vec2 pos = golf_graphics_world_to_screen(game->ball.pos);
+    vec2 pos = golf_graphics_world_to_screen(game->players[game->local_player_id].ball.pos);
     ui.aim_circle.pos = pos;
 
     if (!vec2_equal(graphics->viewport_size, ui.aim_circle.viewport_size_when_set)) {
         ui.aim_circle.viewport_size_when_set = graphics->viewport_size;
         vec3 dir = vec3_normalize(vec3_cross(graphics->cam_dir, graphics->cam_up));
-        vec2 pos0 = golf_graphics_world_to_screen(vec3_add(game->ball.pos, vec3_scale(dir, 2 * game->ball.radius)));
+        vec2 pos0 = golf_graphics_world_to_screen(vec3_add(game->players[game->local_player_id].ball.pos, vec3_scale(dir, 2 * game->players[game->local_player_id].ball.radius)));
         ui.aim_circle.size = vec2_distance(pos0, pos);
     }
 
@@ -997,6 +998,13 @@ static void _golf_ui_main_menu(float dt) {
         if (_golf_ui_button_name(layout, "play_button")) {
             ui.main_menu.is_level_select_open = true;
         }
+        if (_golf_ui_button_name(layout, "host_button")) {
+            golf_net_server_create(12345);
+            ui.main_menu.is_level_select_open = true;
+        }
+        if (_golf_ui_button_name(layout, "join_button")) {
+            golf_net_client_create("127.0.0.1", 12345);
+        }
     }
     else {
         _golf_ui_pixel_pack_square_name(layout, "level_select_background");
@@ -1153,11 +1161,11 @@ static void _golf_ui_in_game_finished(float dt) {
         golf_ui_layout_entity_t *entity;
         if (_golf_ui_layout_get_entity_of_type(layout, "finished_menu_sub_text", GOLF_UI_TEXT, &entity)) {
             entity->text.text.len = 0;
-            if (game->stroke_count == 1) {
-                golf_string_appendf(&entity->text.text, "%d STROKE", game->stroke_count);
+            if (game->players[game->local_player_id].stroke_count == 1) {
+                golf_string_appendf(&entity->text.text, "%d STROKE", game->players[game->local_player_id].stroke_count);
             }
             else {
-                golf_string_appendf(&entity->text.text, "%d STROKES", game->stroke_count);
+                golf_string_appendf(&entity->text.text, "%d STROKES", game->players[game->local_player_id].stroke_count);
             }
             _golf_ui_text(layout, *entity, 1);
         }
@@ -1204,7 +1212,7 @@ static void _golf_ui_in_game(float dt) {
 
     {
         float blink_time = CFG_NUM(game_cfg, "out_of_bounds_blink_time");
-        float time_since_out_of_bounds = game->t - game->ball.time_out_of_bounds;
+        float time_since_out_of_bounds = game->t - game->players[game->local_player_id].ball.time_out_of_bounds;
         if (time_since_out_of_bounds < blink_time) {
             float alpha = 1 - time_since_out_of_bounds / blink_time;
             golf_texture_t *texture = golf_data_get_texture("data/textures/colors/black.png");
