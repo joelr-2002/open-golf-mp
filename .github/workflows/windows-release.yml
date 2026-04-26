@@ -10,6 +10,9 @@ jobs:
   build:
     runs-on: windows-latest
     
+    permissions:
+      contents: write 
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -23,6 +26,7 @@ jobs:
         run: cmake --build out\win64 --config Release
 
       - name: Package
+        shell: powershell
         run: |
           mkdir OpenGolf
           if (Test-Path "out\win64\Release\golf.exe") {
@@ -34,13 +38,12 @@ jobs:
             exit 1
           }
           Copy-Item -Path "data" -Destination "OpenGolf\data" -Recurse
-          Compress-Archive -Path "OpenGolf" -DestinationPath "OpenGolf-Windows.zip"
-        shell: powershell
+          Compress-Archive -Path "OpenGolf" -DestinationPath "OpenGolf-Windows.zip"  # ✅ Sin formato Markdown
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: OpenGolf-Windows.zip
+          files: OpenGolf-Windows.zip  # ✅ Ruta limpia
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
