@@ -10,8 +10,8 @@
 
 #if defined(_WIN32)
 
-#include <Windows.h>
-#include <Shlwapi.h>
+#include <windows.h>
+#include <shlwapi.h>
 
 #else
 

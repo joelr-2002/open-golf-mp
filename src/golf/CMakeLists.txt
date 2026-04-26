@@ -90,7 +90,7 @@ else()
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL Windows)
-    target_compile_options(golf PRIVATE /W3)
+    target_compile_options(golf PRIVATE -Wall)
 else()
     target_compile_options(golf PRIVATE -Wall -Wextra -Wpedantic)
 endif()

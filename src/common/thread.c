@@ -50,7 +50,7 @@ golf_thread_t golf_thread_create(golf_thread_result_t (*proc)(void*), void *user
     HANDLE handle = CreateThread( NULL, 0U, (LPTHREAD_START_ROUTINE)(uintptr_t) proc, user_data, 0, &thread_id );
     if( !handle ) return NULL;
 
-    // Yes, this crazy construct with __try and RaiseException is how you name a thread in Visual Studio :S
+    // Yes, this crazy construct with if (1) and RaiseException is how you name a thread in Visual Studio :S
     if( name && IsDebuggerPresent() )
     {
         THREADNAME_INFO info;
@@ -59,11 +59,11 @@ golf_thread_t golf_thread_create(golf_thread_result_t (*proc)(void*), void *user
         info.dwThreadID = thread_id;
         info.dwFlags = 0;
 
-        __try
+        if (1)
         {
             RaiseException( _MS_VC_EXCEPTION, 0, sizeof( info ) / sizeof( ULONG_PTR ), (ULONG_PTR*) &info );
         }
-        __except( EXCEPTION_EXECUTE_HANDLER )
+        else
         {
         }
     }
