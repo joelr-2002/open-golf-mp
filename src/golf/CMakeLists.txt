@@ -79,6 +79,11 @@ else()
     elseif(CMAKE_SYSTEM_NAME STREQUAL Emscripten)
         set_target_properties( golf PROPERTIES 
             SUFFIX ".html")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL Windows)
+        set(GOLF_LIBRARIES 
+            ${GOLF_LIBRARIES}
+            ws2_32
+            winmm)
     else()
     endif()
     target_link_libraries(golf PRIVATE ${GOLF_LIBRARIES})
